@@ -9,3 +9,4 @@ Low power EPDiy compatible board - almost the same as EPDiy V5 board but with so
 - Voltage divider to measure battery voltage
 
 ## 3D printed cover
+https://www.thingiverse.com/thing:5226424
