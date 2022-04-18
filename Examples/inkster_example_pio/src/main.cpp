@@ -31,7 +31,6 @@ uint8_t button_1_pin = 36;
 uint8_t button_2_pin = 39;
 uint8_t button_3_pin = 13;
 uint64_t wakeUpPins = GPIO_SEL_13 | GPIO_SEL_36 | GPIO_SEL_39; // Wakeup pins, same as button pins
-int adc_multiplier = 1.0;                                      // multiplier to compensate ADC innacuracy
 int bat_pin = 34;                                              // Battery ADC pin
 int therm_pin = 35;                                            // Thermistor ADC pin
 
@@ -41,6 +40,8 @@ int therm_temp_nom = 25;           // temp. for nominal resistance (almost alway
 int therm_b = 4250;                // The beta coefficient of the thermistor (usually 3000-4000)
 int therm_resistor = 100000;       // the value of the 'other' resistor (measured)
 
+// Use internal ADC calibration to get more reasonable results
+// https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/adc.html
 esp_adc_cal_characteristics_t *adc_chars = (esp_adc_cal_characteristics_t *)calloc(1, sizeof(esp_adc_cal_characteristics_t));
 esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_WIDTH_BIT_12, 1100, adc_chars);
 
@@ -128,8 +129,6 @@ int readADC(int pin, uint8_t sample_count)
     }
     average /= sample_count;
 
-    average *= adc_multiplier; // tilt the curve bit
-
     return average;
 }
 
@@ -196,7 +195,7 @@ void deepSleep()
 
     ledColorSet(RgbColor(0, 0, 0));
 
-    pinMode(led_power_toggle_pin, OUTPUT);
+    //pinMode(led_power_toggle_pin, OUTPUT);
     digitalWrite(led_power_toggle_pin, LOW); // cut power to WS2812
 
     Serial.print("[SYSTEM] Going to sleep for ");
@@ -242,9 +241,8 @@ void setup()
     delay(500);
     ledColorSet(RgbColor(0, 0, 0));
 
-    // Characterize ADC at particular atten
-
-    // Check type of calibration value used to characterize ADC
+    // Check type of calibration value used to characterize ADC, should be efuse on ESP32-WROVER-B
+    // https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/adc.html
     if (val_type == ESP_ADC_CAL_VAL_EFUSE_VREF)
     {
         Serial.println("eFuse Vref");
@@ -258,12 +256,9 @@ void setup()
         Serial.println("Default");
     }
 
-    uint32_t reading = readADC(bat_pin);
-    uint32_t voltage = esp_adc_cal_raw_to_voltage(reading, adc_chars) * 2;
-    Serial.println(voltage);
-
-    // ESP32 ADC is highly inaccurate and will have to be callibrated
-    // Easiest way to calibrate ADC is using fully charged lipo with known voltage or better, using ESP32 vref fuse value
+    // Both functions use esp_adc_cal_raw_to_voltage function to calibrate the output via internal efuse Vref
+    // so the measurements should be closer to reality but keep in mind that ESP32 ADC is very innacurate.
+    // It's also good to have some delay after connecting to wifi because of the current spike.
     float bat = measureBattery();
     float temp = measureThermistor(); // Thermistor is powered with the display to save power -> you need to run epd_poweron() before measurement!
     Serial.print("[SYSTEM] Battery voltage: ");
@@ -297,6 +292,7 @@ void setup()
     unsigned long updateMillis = millis();
 
     // If you want to make multiple screen updates, run epd_fullclear before epd_copy_to_framebuffer
+    // If you only do one update nad go to sleep, you can save alot of time ommiting epd_fullclear refresh.
     epd_fullclear(&hl, temperature);
     epd_copy_to_framebuffer(dragon_area, dragon_data, epd_hl_get_framebuffer(&hl));
 
